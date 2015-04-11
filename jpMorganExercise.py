@@ -5,35 +5,19 @@ jpMorganExercise.py
 import pandas as pd
 import numpy as np
 from PySide import QtCore, QtGui
+		
 
-class ForecastEngine(QtGui.QDialog):
+class ForecastEngine(QtGui.QWidget):
 
 	def __init__(self, parent=None):
 		super(ForecastEngine, self).__init__()
-
-		self.setGeometry(100, 100, 900, 700)
-		self.setWindowTitle('Forecasting Calculator')
-
-		self.tabWidget = QtGui.QTabWidget()
-		self.tabWidget.addTab(MainTab(), "Main")
-		self.tabWidget.addTab(PortfolioTab(), "Portfolio")
-		self.tabWidget.addTab(MacroeconTab(), "Macroeconomic Data")
-		self.tabWidget.addTab(BalanceTab(), "Balance")
-
-		mainLayout = QtGui.QVBoxLayout()
-		mainLayout.addWidget(self.tabWidget)
-		self.setLayout(mainLayout)
-
-		self.show()
-
-class MainTab(QtGui.QWidget):
-
-	def __init__(self, parent=None):
-		super(MainTab, self).__init__()
 		self.initUI()
 		self.setupConnections()
 
 	def initUI(self):
+		self.setGeometry(100, 100, 900, 700)
+		self.setWindowTitle('Forecasting Calculator')
+
 		self.portFile = QtGui.QLabel("Portfolio File")
 		self.econFile = QtGui.QLabel("Macroeconomic Data File")
 		self.portEdit = QtGui.QLineEdit("Please import portfolio file here")
@@ -46,42 +30,111 @@ class MainTab(QtGui.QWidget):
 
 		self.quitButton = QtGui.QPushButton("Exit")
 		self.runButton = QtGui.QPushButton("Run")
+		self.runButton.setEnabled(0)
 
-		upperLayout = QtGui.QHBoxLayout()
-		upperLayout.addWidget(self.portFile)
-		upperLayout.addWidget(self.portEdit)
-		upperLayout.addWidget(self.browseButtonP)
+		self.viewPortButton = QtGui.QPushButton("View Portfolio")
+		self.viewEconButton = QtGui.QPushButton("View Macroeconomic Data")
+		self.viewPortButton.setEnabled(0)
+		self.viewEconButton.setEnabled(0)
 
-		middleLayout = QtGui.QHBoxLayout()
-		middleLayout.addWidget(self.econFile)
-		middleLayout.addWidget(self.econEdit)
-		middleLayout.addWidget(self.browseButtonE)
+		self.emptyLable = QtGui.QLabel("")
+
+		portLayout = QtGui.QHBoxLayout()
+		portLayout.addWidget(self.portFile)
+		portLayout.addWidget(self.portEdit)
+		portLayout.addWidget(self.browseButtonP)
+
+		econLayout = QtGui.QHBoxLayout()
+		econLayout.addWidget(self.econFile)
+		econLayout.addWidget(self.econEdit)
+		econLayout.addWidget(self.browseButtonE)
+
+		buttonLayout = QtGui.QHBoxLayout()
+		buttonLayout.addWidget(self.viewPortButton)
+		buttonLayout.addWidget(self.viewEconButton)
+
+		fileLayout = QtGui.QVBoxLayout()
+		fileLayout.addLayout(portLayout)
+		fileLayout.addLayout(econLayout)
+		fileLayout.addLayout(buttonLayout)
 
 		lowerLayout = QtGui.QHBoxLayout()
 		lowerLayout.addWidget(self.runButton)
 		lowerLayout.addWidget(self.quitButton)
 
+		self.stackLayout = QtGui.QStackedLayout()
+		self.stackLayout.addWidget(self.emptyLable)
+
 		mainLayout = QtGui.QVBoxLayout()
-		mainLayout.addLayout(upperLayout)
-		mainLayout.addLayout(middleLayout)
+		mainLayout.addLayout(fileLayout)
+		mainLayout.addLayout(self.stackLayout)
 		mainLayout.addLayout(lowerLayout)
-		mainLayout.addStretch(1)
 		self.setLayout(mainLayout)
+
+		self.show()
 
 	def setupConnections(self):
 		self.connect(self.browseButtonP, QtCore.SIGNAL("clicked()"), self.browsePClicked)
 		self.connect(self.browseButtonE, QtCore.SIGNAL("clicked()"), self.browseEClicked)
+		self.connect(self.runButton, QtCore.SIGNAL("clicked()"), self.runClicked)
 		self.connect(self.quitButton, QtCore.SIGNAL("clicked()"), self.on_quit)
+		self.viewPortButton.clicked.connect(lambda: self.stackLayout.setCurrentWidget(self.portTable))
+		self.viewEconButton.clicked.connect(lambda: self.stackLayout.setCurrentWidget(self.econTable))
 
 	def browsePClicked(self):
 		f, _ = QtGui.QFileDialog.getOpenFileName(self)
 		if f != "":
 			self.portEdit.setText(f)
+			self.portData = self.get_data(f)
+			self.portTable = self.create_table(self.portData)
+			self.stackLayout.addWidget(self.portTable)
+			self.viewPortButton.setEnabled(1)
+			if self.viewEconButton.isEnabled():
+				self.runButton.setEnabled(1)
 
 	def browseEClicked(self):
 		f, _ = QtGui.QFileDialog.getOpenFileName(self)
 		if f != "":
 			self.econEdit.setText(f)
+			self.econData = self.get_data(f)
+			self.econTable = self.create_table(self.econData)
+			self.stackLayout.addWidget(self.econTable)
+			self.viewEconButton.setEnabled(1)
+			if self.viewPortButton.isEnabled():
+				self.runButton.setEnabled(1)
+
+	def runClicked(self):
+		self.balanceTable = self.portTable
+		self.balanceTable.insertColumn(self.portTable.columnCount())
+		self.balanceButtons = []
+		for ii in range(self.balanceTable.rowCount()):
+			button = QtGui.QPushButton("View Balance")
+			self.balanceTable.setCellWidget(ii+1, self.portTable.columnCount()-1, button)
+			self.balanceButtons.append(button)
+		self.balanceTable.resizeColumnsToContents()
+		self.stackLayout.addWidget(self.balanceTable)
+		self.stackLayout.setCurrentWidget(self.balanceTable)
+
+
+	# may need to write a special get_data function for portfolio data
+	# to avoid running out of memory
+	def get_data(self, filepath):
+		return pd.read_csv(filepath)
+
+	def create_table(self, dataFrame):
+		header = dataFrame.columns
+		data = dataFrame.values
+		table = QtGui.QTableWidget(len(data), len(header))
+
+		for ii in range(len(header)):
+			item = QtGui.QTableWidgetItem(str(header[ii]))
+			table.setItem(0, ii, item)
+		for ii in range(len(data)):
+			for jj in range(len(header)):
+				item = QtGui.QTableWidgetItem(str(data[ii][jj]))
+				table.setItem(ii+1, jj, item) 
+		table.resizeColumnsToContents()
+		return table
 
 	def on_quit(self):
 		print "exiting"
@@ -112,12 +165,6 @@ class PortfolioTab(QtGui.QWidget):
 		mainLayout.addWidget(self.table)
 		self.setLayout(mainLayout)
 
-	# may need to write a special get_data function for portfolio data
-	# to avoid running out of memory
-	def get_data(self, filepath=".", filename="loanData"):
-		fpath = os.path.join(filepath, filename)
-		return pd.read_csv(fpath)
-
 class MacroeconTab(QtGui.QWidget):
 	def __init__(self, parent=None):
 		super(MacroeconTab, self).__init__(parent)
@@ -142,13 +189,56 @@ class MacroeconTab(QtGui.QWidget):
 		mainLayout.addWidget(self.table)
 		self.setLayout(mainLayout)
 
+
 	def get_data(self, filepath=".", filename="econData"):
 		fpath = os.path.join(filepath, filename)
 		return pd.read_csv(fpath)
 
 class BalanceTab(QtGui.QWidget):
+
 	def __init__(self, parent=None):
 		super(BalanceTab, self).__init__(parent)
+		self.econData = MacroeconTab().econData
+		self.portfolio = PortfolioTab().portfolio
+		self.tableLayout = QtGui.QStackedLayout()
+		self.initUI()
+
+	def initUI(self):
+		header = self.portfolio.columns
+		data = self.portfolio.values
+		self.table = QtGui.QTableWidget(len(data), len(header)+1)
+		results = []
+
+		for ii in range(len(header)):
+			item = QtGui.QTableWidgetItem(str(header[ii]))
+			self.table.setItem(0, ii, item)
+		for ii in range(len(data)):
+			for jj in range(len(header)):
+				item = QtGui.QTableWidgetItem(str(data[ii][jj]))
+				self.table.setItem(ii+1, jj, item) 
+			button = QtGui.QPushButton("View Balance")
+			results.append(button)
+			self.table.setCellWidget(ii+1, len(header), button)
+		self.table.resizeColumnsToContents()
+
+		self.label = QtGui.QLabel("")
+
+		
+		self.tableLayout.addWidget(self.label)
+		self.tableLayout.addWidget(self.table)
+
+		mainLayout = QtGui.QVBoxLayout(self)
+		mainLayout.addLayout(self.tableLayout)
+
+		self.setLayout(mainLayout)
+
+	@staticmethod
+	def changeLayout(self):
+		self.tableLayout.setCurrentWidget(self.table)
+
+	@classmethod
+	def hello(self):
+		print "hello"
 
 
 # def get_data(filepath='.', filename='loanData', **kwargs):
