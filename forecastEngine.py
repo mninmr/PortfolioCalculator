@@ -1,10 +1,10 @@
 '''
-jpMorganExercise.py
+forecastEngine.py
 
 '''
 import pandas as pd
 import numpy as np
-import math
+import math, locale
 from PySide import QtCore, QtGui
 from functools import partial
 		
@@ -120,7 +120,7 @@ class ForecastEngine(QtGui.QWidget):
 
 	def balanceClicked(self, index):
 		self.balance = Balance(self.portData.values[index], self.econData)
-		self.balance.setGeometry(200, 200, 900, 700)
+		#self.balance.setGeometry(200, 200, 900, 700)
 
 	# may need to write a special get_data function for portfolio data
 	# to avoid running out of memory
@@ -155,6 +155,7 @@ class Balance(QtGui.QWidget):
 		
 	def initUI(self):
 		self.setWindowTitle("Balance")
+		self.setGeometry(200, 200, 900, 700)
 
 		self.table  = self.createTable()
 
@@ -163,51 +164,73 @@ class Balance(QtGui.QWidget):
 		self.setLayout(mainLayout)
 		self.show()
 
+	def suffStat(self):
+		self.loanAmount = self.loan[3]
+		self.term = self.loan[6]
+		self.age = self.loan[-1]
+		self.rate = self.loan[7]
+		self.location = self.loan[2]
+		self.ofico = self.loan[5]
+		self.balance = self.loan[8]
+		self.ltv = self.loan[4]
+		self.mtg = self.econData.MTG
+		self.deficit = self.balance - self.loanAmount*((1+self.rate)**self.term \
+											- (1+self.rate)**self.age)/((1+self.rate)**self.term - 1)
+		if self.location == "NY":
+			self.hpi = self.econData.HPI_NY
+		else:
+			self.hpi = self.econData.HPI_CA
+		self.new_rate = self.simulateRate()/12.0
+
+	def simulateRate(self):
+		a = 0.3; b = 0.06; sigma = 0.005; r0 = 0.044
+		rate = np.empty((1000, 24))
+		rate.fill(r0)
+		for ii in range(1000):
+			for tt in range(1, 24):
+				noise = np.random.normal(0, 1, 1)
+				rate[ii,tt] = rate[ii,tt-1]+a*(b-rate[ii,tt-1])+sigma*noise
+		return sum(rate)/1000.0
+
+
 	def createTable(self):
-		self.header = ["Date", "Normal Repayment", "Refinance", "Default", "Expected Balance"]
+		self.header = ["Date", "Normal Repayment", "P(Refinance)", "P(Default)", "Expected Balance"]
 		self.data = self.econData.values[22:]
 		table = QtGui.QTableWidget(len(self.data)+1, len(self.header))
+		self.suffStat()
 
-		repayment = self.calcBalance()
+		balance = self.calcBalance()
+
 		for ii in range(len(self.header)):
 			item = QtGui.QTableWidgetItem(str(self.header[ii]))
 			table.setItem(0, ii, item)
 		for ii in range(len(self.data)):
-			item = QtGui.QTableWidgetItem(str(self.data[ii][0]))
-			table.setItem(ii+1, 0, item)
-			item = QtGui.QTableWidgetItem(str(repayment[ii]))
-			table.setItem(ii+1, 3, item) 
+			table.setItem(ii+1, 0, QtGui.QTableWidgetItem(str(self.data[ii][0])))
+			table.setItem(ii+1, 1, QtGui.QTableWidgetItem(locale.currency(round(balance[ii][0],2), grouping=True)))
+			table.setItem(ii+1, 2, QtGui.QTableWidgetItem(str(round(balance[ii][1]*100, 5))+"%"))
+			table.setItem(ii+1, 3, QtGui.QTableWidgetItem(str(round(balance[ii][2]*100, 5))+"%"))
+			table.setItem(ii+1, 4, QtGui.QTableWidgetItem(locale.currency(round(balance[ii][3],2), grouping=True)))
 		table.resizeColumnsToContents()
 		return table
 
 	def calcBalance(self):
-		loanAmount = self.loan[3]
-		term = self.loan[6]
-		rate = self.loan[7]/12.0
-		age = self.loan[-1]
-		location = self.loan[2]
-		ofico = self.loan[5]
-
-		repayment = []
+		balance = []
 		for ii in range(24):
-			balance = loanAmount*((1+rate)**term - (1+rate)**(ii+age))/((1+rate)**term - 1)
-			balance = round(balance, 2)
-			repayment.append(balance)
-
-		refinance = []
-		for ii in range(24):
-			prob = 1.0 / (1 + math.exp(3.4761 - 101.09 * rate - self.data[ii][-1]))
-			#prob = round(prob, 2)
-			refinance.append(prob)
-
-		default = []
-		for ii in range(24):
-			f = 4.4 + 0.01*ofico + 0.2*min(max(ii+age-36, 0), 24) + 0.1*min(max(ii+age-60, 0), 60) \
-							- 0.05 * min(max(ii+age-120, 0), 120)
-			f = 1.0 / (1+math.exp(f))
-			default.append(f)
-
-		return default
+			if ii != 0:
+				lastBal = balance[-1][-1] # balance at time t
+			else:
+				lastBal = self.balance
+			repay = self.loanAmount*((1+self.new_rate[ii])**self.term - (1+self.new_rate[ii])**(ii+self.age)) \
+									/((1+self.new_rate[ii])**self.term - 1) + self.deficit
+			pRefinance = 1.0 / (1 + math.exp(3.4761 - 101.09 * (self.new_rate[ii] - self.mtg[22+ii])))
+			pDefault = 1.0 / (1+math.exp(4.4 + 0.01*self.ofico \
+									- 4*lastBal/(self.loanAmount/self.ltv*self.hpi[22+ii]/self.hpi[22-self.age])
+									+ 0.2*min(max(ii+self.age-36, 0), 24) \
+									+ 0.1*min(max(ii+self.age-60, 0), 60) \
+									- 0.05 * min(max(ii+self.age-120, 0), 120)))
+			curBal = (1-pRefinance-pDefault)*repay + pDefault*lastBal
+			balance.append([repay, pRefinance, pDefault, curBal])
+		return balance
 
 
 
@@ -215,6 +238,34 @@ class Balance(QtGui.QWidget):
 
 
 
+
+
+
+	# def calcRepayment(self):
+	# 	repayment = []
+	# 	for ii in range(24):
+	# 		balance = self.loanAmount*((1+self.rate)**self.term - (1+self.rate)**(ii+self.age)) \
+	# 								/((1+self.rate)**self.term - 1) + self.deficit
+	# 		balance = round(balance, 2)
+	# 		repayment.append(balance)
+	# 	return repayment
+
+	# def calcRefinance(self):
+	# 	refinance = []
+	# 	for ii in range(24):
+	# 		prob = 1.0 / (1 + math.exp(3.4761 - 101.09 * (self.rate - self.mtg[22+ii])))
+	# 		#prob = round(prob, 2)
+	# 		refinance.append(prob)
+	# 	return refinance
+
+	# def calcDefault(self):
+	# 	default = []
+	# 	for ii in range(24):
+	# 		f = 4.4 + 0.01*self.ofico + 0.2*min(max(ii+self.age-36, 0), 24) + \
+	# 		 0.1*min(max(ii+self.age-60, 0), 60) - 0.05 * min(max(ii+self.age-120, 0), 120)
+	# 		f = 1.0 / (1+math.exp(f))
+	# 		default.append(f)
+	# 	return default
 
 
 
