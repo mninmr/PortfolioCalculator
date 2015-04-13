@@ -8,8 +8,15 @@ fixed rate mortgages under different macroeconomic scenarios.
 * NumPy 
 * Pandas
 * PySide
-
 https://pypi.python.org/pypi/PySide
+
+## Getting Started
+
+Execute the program by running the following command:
+
+.. code-block:: shell
+
+python forecastEngine.py
 
 
 ## Documentation
