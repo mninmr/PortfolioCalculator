@@ -14,9 +14,9 @@ https://pypi.python.org/pypi/PySide
 
 Execute the program by running the following command:
 
-.. code-block:: shell
-
+```shell
 python forecastEngine.py
+```
 
 
 ## Documentation
