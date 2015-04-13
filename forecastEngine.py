@@ -127,9 +127,9 @@ class ForecastEngine(QtGui.QWidget):
 	# may need to write a special get_data function for portfolio data
 	# to avoid running out of memory
 	def get_data(self, filepath):
-		#iter_csv = pd.read_csv(filepath, iterator=True, chunksize=5)
-		#return pd.concat([chunk for chunk in iter_csv])
-		return pd.read_csv(filepath)
+		iter_csv = pd.read_csv(filepath, iterator=True, chunksize=1000)
+		return pd.concat([chunk for chunk in iter_csv])
+		#return pd.read_csv(filepath)
 
 	def create_table(self, dataFrame):
 		header = dataFrame.columns
